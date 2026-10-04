@@ -67,6 +67,10 @@ crashlytics-build.properties
 # Packed Addressables
 /[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
 
+# Stockfish engine binary (~100 MB, over GitHub's file limit); see Assets/StreamingAssets/Stockfish/README.txt
+/[Aa]ssets/[Ss]treaming[Aa]ssets/[Ss]tockfish/*.exe
+/[Aa]ssets/[Ss]treaming[Aa]ssets/[Ss]tockfish/*.exe.meta
+
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
