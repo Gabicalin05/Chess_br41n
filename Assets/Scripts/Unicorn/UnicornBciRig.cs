@@ -9,8 +9,8 @@ using UnityEngine;
 namespace BciChess.Unicorn
 {
     /// <summary>
-    /// Instantiates and configures the g.tec ERP prefab for the game: device type, number of classes, selection
-    /// threshold, and one invisible <see cref="StimulusProxyTag"/> per stimulus class (plus the training object)
+    /// Instantiates and configures the g.tec ERP prefab for the game: device type, number of classes, flash timing,
+    /// training trials, selection threshold, and one invisible <see cref="StimulusProxyTag"/> per stimulus class (plus the training object)
     /// in place of the prefab's demo sprites. Everything Unicorn-specific is created here.
     /// </summary>
     public sealed class UnicornBciRig : MonoBehaviour
@@ -91,6 +91,9 @@ namespace BciChess.Unicorn
             // Class ids are 1-based; the paradigm must know about the highest one in use.
             Paradigm.NumberOfClasses = (uint)Mathf.Max(2, classIds.Max());
             Paradigm.SelectionThreshold = settings.selectionThreshold;
+            Paradigm.OnTimeMs = settings.flashOnTimeMs;
+            Paradigm.OffTimeMs = settings.flashOffTimeMs;
+            Paradigm.NumberOfTrainingTrials = (uint)Mathf.Max(1, settings.numberOfTrainingTrials);
 
             ReplaceDemoTags(classIds);
 
