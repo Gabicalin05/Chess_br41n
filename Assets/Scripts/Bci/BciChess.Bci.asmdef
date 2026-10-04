@@ -1,10 +1,7 @@
 {
-    "name": "BciChess.Interaction",
-    "rootNamespace": "BciChess.Interaction",
-    "references": [
-        "BciChess.Core",
-        "BciChess.Bci"
-    ],
+    "name": "BciChess.Bci",
+    "rootNamespace": "BciChess.Bci",
+    "references": [],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

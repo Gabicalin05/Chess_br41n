@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using BciChess.Bci;
 using BciChess.Core;
 using BciChess.Interaction;
 using UnityEngine;
@@ -8,7 +9,7 @@ using UnityEngine.UI;
 namespace BciChess.UI
 {
     /// <summary>
-    /// Scene entry point: creates the chess game, the selection pipeline and the UI, and wires input to them.
+    /// Scene entry point: creates the chess game, the selection pipeline, the BCI and the UI, and wires input to them.
     /// Both sides are currently played by humans on one machine; the computer opponent is added in a later phase.
     /// </summary>
     public sealed class ChessGameBootstrap : MonoBehaviour
@@ -21,11 +22,15 @@ namespace BciChess.UI
         [Tooltip("Show the board from Black's side.")]
         [SerializeField] private bool flipBoard = false;
 
+        [SerializeField] private BciSettings bci = new BciSettings();
+
         private ChessGame _game;
         private SelectionController _selection;
         private BoardView _board;
         private GameHudView _hud;
         private KeyboardBoardInput _keyboard;
+        private BciSelectionController _bci;
+        private BciTargetOverlay _bciOverlay;
 
         public ChessGame Game => _game;
         public SelectionController Selection => _selection;
@@ -53,12 +58,51 @@ namespace BciChess.UI
             _keyboard.UndoRequested += Undo;
             _keyboard.FlipRequested += Flip;
 
+            SetupBci();
             Render();
+        }
+
+        private void Update()
+        {
+            if (_bci == null)
+                return;
+            if (Input.GetKeyDown(KeyCode.F3))
+                _bci.Enabled = !_bci.Enabled;
+            _bci.Tick(Time.deltaTime);
         }
 
         private void OnDestroy()
         {
+            _bci?.Dispose();
             _selection?.Dispose();
+        }
+
+        private void SetupBci()
+        {
+            _bciOverlay = _board.gameObject.AddComponent<BciTargetOverlay>();
+            _bciOverlay.Build(_board, theme);
+
+            if (bci.mode == BciMode.Off)
+                return;
+
+            StimulusManager stimuli;
+            try
+            {
+                stimuli = new StimulusManager(bci.stimulusClassIds ?? Array.Empty<int>(), bci.maxSimultaneousTargets);
+            }
+            catch (ArgumentException e)
+            {
+                Debug.LogError($"BCI disabled: invalid stimulus configuration. {e.Message}", this);
+                return;
+            }
+
+            var fake = new FakeBciSelector();
+            gameObject.AddComponent<FakeBciKeyboardInput>().Initialize(fake);
+
+            _bci = new BciSelectionController(_selection, fake, stimuli, bci.selectionTimeoutSeconds,
+                bci.offerCancelTarget);
+            _bci.Changed += Render;
+            _bci.Enabled = bci.enabledOnStart;
         }
 
         private void NewGame() => _game.Reset(ResolveStartFen());
@@ -75,6 +119,9 @@ namespace BciChess.UI
         {
             _board.Render(_game, _selection, _keyboard.CursorVisible ? _keyboard.Cursor : (Square?)null);
             _hud.Render(_game, _selection);
+            _hud.RenderBci(_bci);
+            if (_bciOverlay != null)
+                _bciOverlay.Render(_bci != null ? _bci.Targets : Array.Empty<BciTarget>());
         }
 
         private string ResolveStartFen()

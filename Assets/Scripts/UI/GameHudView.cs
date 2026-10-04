@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using BciChess.Core;
@@ -11,7 +11,7 @@ namespace BciChess.UI
     /// <summary>Side panel (turn, prompt, move list, buttons), promotion picker and game-over banner.</summary>
     public sealed class GameHudView : MonoBehaviour
     {
-        private const int MaxMoveLines = 16;
+        private const int MaxMoveLines = 5;
 
         private BoardTheme _theme;
         private Text _turnText;
@@ -24,6 +24,11 @@ namespace BciChess.UI
         private readonly List<Outline> _promotionOutlines = new List<Outline>();
         private GameObject _gameOverBanner;
         private Text _gameOverText;
+        private Text _bciStatusText;
+        private Text _bciTargetsText;
+        private Text _bciMessageText;
+        private readonly List<Text> _promotionKeyLabels = new List<Text>();
+        private Text _promotionCancelLabel;
 
         public event Action NewGameClicked;
         public event Action UndoClicked;
@@ -75,6 +80,65 @@ namespace BciChess.UI
                     _promotionOutlines[i].effectColor =
                         color == PieceColor.White ? _theme.whitePieceOutline : _theme.blackPieceOutline;
                 }
+            }
+        }
+
+        /// <summary>Shows BCI status and the current targets with their slot keys. Pass null when BCI is off.</summary>
+        public void RenderBci(BciSelectionController bci)
+        {
+            var slotByTarget = new Dictionary<string, string>();
+            if (bci == null)
+            {
+                _bciStatusText.text = "Off (mouse and keyboard only)";
+                _bciTargetsText.text = string.Empty;
+                _bciMessageText.text = string.Empty;
+            }
+            else
+            {
+                _bciStatusText.text = BciStatusText(bci);
+                _bciMessageText.text = bci.Message;
+
+                var list = new StringBuilder();
+                foreach (var target in bci.Targets)
+                {
+                    string key = FakeBciKeyboardInput.KeyLabel(target.Stimulus.Value.Index);
+                    slotByTarget[target.Id] = key;
+                    if (list.Length > 0)
+                        list.Append("    ");
+                    list.Append('[').Append(key).Append("] ").Append(target.Label);
+                }
+                _bciTargetsText.text = list.ToString();
+            }
+
+            var pieces = SelectionController.PromotionPieces;
+            for (int i = 0; i < _promotionKeyLabels.Count; i++)
+            {
+                string letter = MoveNotation.PieceLetter(pieces[i]);
+                _promotionKeyLabels[i].text = slotByTarget.TryGetValue("promo:" + pieces[i], out var key)
+                    ? $"{letter}  /  BCI {key}"
+                    : letter;
+            }
+            _promotionCancelLabel.text = slotByTarget.TryGetValue("cancel", out var cancelKey)
+                ? $"Cancel (Esc / BCI {cancelKey})"
+                : "Cancel (Esc)";
+        }
+
+        private static string BciStatusText(BciSelectionController bci)
+        {
+            switch (bci.Status)
+            {
+                case BciSessionStatus.Disabled:
+                    return $"{bci.Selector.Name} - paused (F3 to resume)";
+                case BciSessionStatus.Idle:
+                    return $"{bci.Selector.Name} - idle";
+                case BciSessionStatus.AwaitingSelection:
+                    return $"{bci.Selector.Name} - waiting for selection ({bci.Targets.Count} targets)";
+                case BciSessionStatus.TooManyCandidates:
+                    return $"{bci.CandidateCount} options but only {bci.Capacity} BCI targets - use mouse/keyboard";
+                case BciSessionStatus.Unavailable:
+                    return $"{bci.Selector.Name} - unavailable";
+                default:
+                    return string.Empty;
             }
         }
 
@@ -177,7 +241,7 @@ namespace BciChess.UI
             UiFactory.AddLayout(_turnText, 48f);
 
             _promptText = UiFactory.CreateText("Prompt", panel, "", 28, _theme.text, TextAnchor.UpperLeft);
-            UiFactory.AddLayout(_promptText, 74f);
+            UiFactory.AddLayout(_promptText, 64f);
 
             _stateText = UiFactory.CreateText("State", panel, "", 18, _theme.mutedText, TextAnchor.MiddleLeft);
             UiFactory.AddLayout(_stateText, 26f);
@@ -190,7 +254,20 @@ namespace BciChess.UI
 
             _movesText = UiFactory.CreateText("Moves", panel, "-", 23, _theme.text, TextAnchor.UpperLeft);
             _movesText.lineSpacing = 1.05f;
-            UiFactory.AddLayout(_movesText, 200f, flexibleHeight: 1f);
+            UiFactory.AddLayout(_movesText, 140f, flexibleHeight: 1f);
+
+            var bciHeader = UiFactory.CreateText("BciHeader", panel, "BCI", 20, _theme.mutedText, TextAnchor.LowerLeft);
+            UiFactory.AddLayout(bciHeader, 28f);
+
+            _bciStatusText = UiFactory.CreateText("BciStatus", panel, "", 21, _theme.accent, TextAnchor.UpperLeft);
+            UiFactory.AddLayout(_bciStatusText, 52f);
+
+            _bciTargetsText = UiFactory.CreateText("BciTargets", panel, "", 20, _theme.text, TextAnchor.UpperLeft);
+            _bciTargetsText.lineSpacing = 1.1f;
+            UiFactory.AddLayout(_bciTargetsText, 96f);
+
+            _bciMessageText = UiFactory.CreateText("BciMessage", panel, "", 19, _theme.warning, TextAnchor.UpperLeft);
+            UiFactory.AddLayout(_bciMessageText, 24f);
 
             var buttonRow = UiFactory.CreateRect("Buttons", panel);
             var rowLayout = buttonRow.gameObject.AddComponent<HorizontalLayoutGroup>();
@@ -208,7 +285,8 @@ namespace BciChess.UI
             var help = UiFactory.CreateText("Help", panel,
                 "Mouse: click a piece, then a destination. Right-click cancels.\n" +
                 "Keyboard: arrows move the cursor, Enter/Space select, Tab cycles candidates, Esc cancels.\n" +
-                "Q/R/B/N promote - Backspace undo - F2 new game - F flip board",
+                "Q/R/B/N promote - Backspace undo - F2 new game - F flip board\n" +
+                "Simulated BCI: number keys 1-9, 0 pick target slots 1-10 - F3 pauses BCI",
                 17, _theme.mutedText, TextAnchor.LowerLeft);
             UiFactory.AddLayout(help, 110f);
         }
@@ -271,12 +349,15 @@ namespace BciChess.UI
 
                 var key = UiFactory.CreateText("Key", box.transform, MoveNotation.PieceLetter(type), 22,
                     _theme.mutedText, TextAnchor.MiddleCenter);
+                key.horizontalOverflow = HorizontalWrapMode.Overflow;
                 UiFactory.Place(key.rectTransform, new Vector2(x, 10f - buttonSize / 2f - 20f), new Vector2(buttonSize, 30f));
+                _promotionKeyLabels.Add(key);
             }
 
             var cancel = UiFactory.CreateButton("Cancel", box.transform, "Cancel (Esc)", _theme,
                 () => PromotionCancelled?.Invoke(), 22);
-            UiFactory.Place((RectTransform)cancel.transform, new Vector2(0f, -132f), new Vector2(220f, 44f));
+            UiFactory.Place((RectTransform)cancel.transform, new Vector2(0f, -132f), new Vector2(300f, 44f));
+            _promotionCancelLabel = cancel.GetComponentInChildren<Text>();
 
             _promotionOverlay.SetActive(false);
         }
