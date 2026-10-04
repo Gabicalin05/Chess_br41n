@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using BciChess.Bci;
 using BciChess.Core;
 using BciChess.Interaction;
 using UnityEngine;
@@ -132,9 +134,13 @@ namespace BciChess.UI
                 case BciSessionStatus.Idle:
                     return $"{bci.Selector.Name} - idle";
                 case BciSessionStatus.AwaitingSelection:
-                    return $"{bci.Selector.Name} - waiting for selection ({bci.Targets.Count} targets)";
+                    bool grouped = bci.Targets.Any(t => t.Payload is CandidateGroup);
+                    string step = bci.Depth > 0 ? "inside group - choose an option or Back"
+                        : grouped ? $"{bci.CandidateCount} options grouped - choose a group"
+                        : "choose an option";
+                    return $"{bci.Selector.Name}: {step}";
                 case BciSessionStatus.TooManyCandidates:
-                    return $"{bci.CandidateCount} options but only {bci.Capacity} BCI targets - use mouse/keyboard";
+                    return $"{bci.CandidateCount} options do not fit {bci.Capacity} BCI targets, even grouped - use mouse/keyboard";
                 case BciSessionStatus.Unavailable:
                     return $"{bci.Selector.Name} - unavailable";
                 default:

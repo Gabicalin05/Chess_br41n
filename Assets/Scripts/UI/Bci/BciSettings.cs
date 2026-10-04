@@ -25,8 +25,12 @@ namespace BciChess.UI
                  "configured in the g.tec ERP paradigm.")]
         public int[] stimulusClassIds = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
-        [Tooltip("Maximum number of targets presented at once. The simulated BCI has keys for the first 10 slots.")]
-        [Min(1)] public int maxSimultaneousTargets = 10;
+        [Tooltip("Maximum number of targets presented at once. More candidates are split into groups. " +
+                 "The simulated BCI has keys for the first 10 slots.")]
+        [Min(1)] public int maxSimultaneousTargets = 6;
+
+        [Tooltip("Choose automatically when there is only one candidate (one movable piece or one destination).")]
+        public bool autoSelectSingleCandidate = true;
 
         [Tooltip("Restart a selection if no result arrives within this many seconds (0 = wait forever).")]
         [Min(0f)] public float selectionTimeoutSeconds = 0f;

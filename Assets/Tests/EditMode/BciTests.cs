@@ -135,12 +135,17 @@ namespace BciChess.Tests
         private static int[] ClassIds(int count) => Enumerable.Range(1, count).ToArray();
 
         private static (ChessGame game, SelectionController selection, FakeBciSelector fake, BciSelectionController bci)
-            Create(string fen = ChessPosition.StartFen, int capacity = 12, float timeout = 0f)
+            Create(string fen = ChessPosition.StartFen, int capacity = 12, float timeout = 0f, bool autoSelect = true)
         {
             var game = new ChessGame(fen);
             var selection = new SelectionController(game);
             var fake = new FakeBciSelector();
-            var bci = new BciSelectionController(selection, fake, new StimulusManager(ClassIds(capacity), capacity), timeout)
+            var options = new BciSelectionOptions
+            {
+                SelectionTimeoutSeconds = timeout,
+                AutoSelectSingleCandidate = autoSelect
+            };
+            var bci = new BciSelectionController(selection, fake, new StimulusManager(ClassIds(capacity), capacity), options)
             {
                 Enabled = true
             };
@@ -207,7 +212,7 @@ namespace BciChess.Tests
         {
             var (game, _, fake, bci) = Create("8/P6k/8/8/8/8/8/K7 w - - 0 1");
             fake.TrySelectSlot(SlotOf(bci, "piece:a7"));
-            fake.TrySelectSlot(SlotOf(bci, "dest:a8"));
+            // a8 is the pawn's only destination, so it is auto-selected and promotion is asked next.
             CollectionAssert.AreEquivalent(
                 new[] { "promo:Queen", "promo:Rook", "promo:Bishop", "promo:Knight", "cancel" },
                 bci.Targets.Select(t => t.Id));
@@ -217,13 +222,99 @@ namespace BciChess.Tests
         }
 
         [Test]
-        public void TooManyCandidates_DoesNotStartSelection()
+        public void TooFewSlotsToGroup_DoesNotStartSelection()
         {
-            var (_, _, fake, bci) = Create(capacity: 4);
+            var (_, _, fake, bci) = Create(capacity: 1);
             Assert.AreEqual(BciSessionStatus.TooManyCandidates, bci.Status);
             Assert.AreEqual(10, bci.CandidateCount);
             Assert.AreEqual(0, bci.Targets.Count);
             Assert.IsFalse(fake.IsSelecting);
+        }
+
+        [Test]
+        public void MoreCandidatesThanSlots_AreGroupedCoveringEveryPieceOnce()
+        {
+            var (_, _, fake, bci) = Create(capacity: 4);
+            Assert.AreEqual(BciSessionStatus.AwaitingSelection, bci.Status);
+            Assert.LessOrEqual(bci.Targets.Count, 4);
+            Assert.IsTrue(bci.Targets.All(t => t.Payload is CandidateGroup));
+
+            var members = bci.Targets.SelectMany(t => ((CandidateGroup)t.Payload).Members).Select(m => m.Id).ToList();
+            CollectionAssert.AreEquivalent(
+                new[] { "a2", "b2", "c2", "d2", "e2", "f2", "g2", "h2", "b1", "g1" }.Select(s => "piece:" + s), members);
+            Assert.IsTrue(fake.IsSelecting);
+        }
+
+        [Test]
+        public void Groups_AreSpatiallyContiguous()
+        {
+            var (_, _, _, bci) = Create(capacity: 4);
+            var first = (CandidateGroup)bci.Targets[0].Payload;
+            // File-major order: a2, b1, b2 belong together on the left of the board.
+            CollectionAssert.AreEqual(new[] { "piece:a2", "piece:b1", "piece:b2" }, first.Members.Select(m => m.Id));
+        }
+
+        [Test]
+        public void EnteringGroup_ShowsMembersAndBack_BackReturns()
+        {
+            var (_, _, fake, bci) = Create(capacity: 4);
+            int groupCount = bci.Targets.Count;
+            var group = (CandidateGroup)bci.Targets[0].Payload;
+
+            fake.TrySelectSlot(0);
+            Assert.AreEqual(1, bci.Depth);
+            CollectionAssert.AreEqual(group.Members.Select(m => m.Id).Concat(new[] { "back" }),
+                bci.Targets.Select(t => t.Id));
+
+            fake.TrySelectSlot(SlotOf(bci, "back"));
+            Assert.AreEqual(0, bci.Depth);
+            Assert.AreEqual(groupCount, bci.Targets.Count);
+        }
+
+        [Test]
+        public void GroupedSelection_PlaysAMove()
+        {
+            var (game, _, fake, bci) = Create(capacity: 4);
+            int groupWithG1 = bci.Targets.ToList().FindIndex(t => ((CandidateGroup)t.Payload).Members.Any(m => m.Id == "piece:g1"));
+            fake.TrySelectSlot(bci.Targets[groupWithG1].Stimulus.Value.Index);
+            fake.TrySelectSlot(SlotOf(bci, "piece:g1"));
+            fake.TrySelectSlot(SlotOf(bci, "dest:f3"));
+            Assert.AreEqual("g1f3", game.LastMove.Value.ToUci());
+            Assert.AreEqual(0, bci.Depth);
+        }
+
+        [Test]
+        public void StimuliAreUniqueAtEveryLevel()
+        {
+            var (_, _, fake, bci) = Create(capacity: 4);
+            Assert.AreEqual(bci.Targets.Count, bci.Targets.Select(t => t.Stimulus.Value.ClassId).Distinct().Count());
+            fake.TrySelectSlot(0);
+            Assert.AreEqual(bci.Targets.Count, bci.Targets.Select(t => t.Stimulus.Value.ClassId).Distinct().Count());
+        }
+
+        // White: king a1 (only move b1), pawn a2 blocked. Black: king a8, pawn a3 blocked.
+        private const string ForcedFen = "k7/8/8/8/8/p7/P7/K7 w - - 0 1";
+
+        [Test]
+        public void SingleCandidates_AreSelectedAutomatically()
+        {
+            var (game, selection, _, bci) = Create(ForcedFen);
+            // White's only move is played without any BCI input.
+            Assert.AreEqual("a1b1", game.MoveHistory[0].ToUci());
+            // Black has one movable piece (king) with several destinations: piece auto-selected, destination asked.
+            Assert.AreEqual(InteractionState.SelectingDestination, selection.State);
+            Assert.AreEqual(Sq("a8"), selection.SelectedPiece);
+            Assert.AreEqual(BciSessionStatus.AwaitingSelection, bci.Status);
+            Assert.IsNotEmpty(bci.Message);
+        }
+
+        [Test]
+        public void AutoSelection_CanBeDisabled()
+        {
+            var (game, selection, _, bci) = Create(ForcedFen, autoSelect: false);
+            Assert.AreEqual(0, game.MoveHistory.Count);
+            Assert.AreEqual(InteractionState.SelectingPiece, selection.State);
+            CollectionAssert.AreEqual(new[] { "piece:a1" }, bci.Targets.Select(t => t.Id));
         }
 
         [Test]

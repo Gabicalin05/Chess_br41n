@@ -99,8 +99,13 @@ namespace BciChess.UI
             var fake = new FakeBciSelector();
             gameObject.AddComponent<FakeBciKeyboardInput>().Initialize(fake);
 
-            _bci = new BciSelectionController(_selection, fake, stimuli, bci.selectionTimeoutSeconds,
-                bci.offerCancelTarget);
+            var options = new BciSelectionOptions
+            {
+                SelectionTimeoutSeconds = bci.selectionTimeoutSeconds,
+                OfferCancelTarget = bci.offerCancelTarget,
+                AutoSelectSingleCandidate = bci.autoSelectSingleCandidate
+            };
+            _bci = new BciSelectionController(_selection, fake, stimuli, options);
             _bci.Changed += Render;
             _bci.Enabled = bci.enabledOnStart;
         }
