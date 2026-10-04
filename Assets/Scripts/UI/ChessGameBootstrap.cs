@@ -4,6 +4,7 @@ using BciChess.Bci;
 using BciChess.Core;
 using BciChess.Engine;
 using BciChess.Interaction;
+using BciChess.Unicorn;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -38,6 +39,11 @@ namespace BciChess.UI
         private ComputerPlayer _computer;
         private IChessEngine _engine;
         private IChessEngine _fallbackEngine;
+        private UnicornBciRig _unicorn;
+        private RectTransform _canvasRoot;
+        private string _bciNotice = string.Empty;
+
+        private const int GameCanvasSortingOrder = 0;
 
         public ChessGame Game => _game;
         public SelectionController Selection => _selection;
@@ -151,8 +157,34 @@ namespace BciChess.UI
                 return;
             }
 
-            var fake = new FakeBciSelector();
-            gameObject.AddComponent<FakeBciKeyboardInput>().Initialize(fake);
+            IBciSelector selector = null;
+            IStimulusSource stimulusSource = null;
+            if (bci.mode == BciMode.Unicorn)
+            {
+                try
+                {
+                    // The g.tec UI (connect, signal quality, training) is drawn above the game UI.
+                    _unicorn = UnicornBciRig.Create(bci.unicorn, stimuli.Slots, GameCanvasSortingOrder + 10);
+                    selector = _unicorn.Selector;
+                    stimulusSource = _unicorn.Selector;
+                    _unicorn.StateChanged += Render;
+                    gameObject.AddComponent<BciCalibrationView>().Build(_canvasRoot, theme, bci.visuals, _unicorn);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Unicorn BCI setup failed: {e.Message}", this);
+                    if (!bci.unicorn.fallBackToSimulated)
+                        return;
+                    _bciNotice = "Unicorn setup failed - using the simulated BCI. See the Console for details.";
+                }
+            }
+
+            if (selector == null)
+            {
+                var fake = new FakeBciSelector();
+                gameObject.AddComponent<FakeBciKeyboardInput>().Initialize(fake);
+                selector = fake;
+            }
 
             var options = new BciSelectionOptions
             {
@@ -160,10 +192,10 @@ namespace BciChess.UI
                 OfferCancelTarget = bci.offerCancelTarget,
                 AutoSelectSingleCandidate = bci.autoSelectSingleCandidate
             };
-            _bci = new BciSelectionController(_selection, fake, stimuli, options);
+            _bci = new BciSelectionController(_selection, selector, stimuli, options);
             _bci.Changed += Render;
             gameObject.AddComponent<BciStimulusPresenter>()
-                .Initialize(_bci, bci.visuals, _board, _hud, _commandBar);
+                .Initialize(_bci, bci.visuals, _board, _hud, _commandBar, stimulusSource);
             _bci.Enabled = bci.enabledOnStart;
         }
 
@@ -189,7 +221,7 @@ namespace BciChess.UI
             _board.Render(_game, _selection, _keyboard.CursorVisible ? _keyboard.Cursor : (Square?)null);
             _hud.Render(_game, _selection);
             _hud.RenderOpponent(_computer, computer);
-            _hud.RenderBci(_bci);
+            _hud.RenderBci(_bci, _bciNotice);
         }
 
         private string ResolveStartFen()
@@ -216,12 +248,15 @@ namespace BciChess.UI
             var canvasObject = new GameObject("ChessCanvas", typeof(RectTransform), typeof(Canvas),
                 typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasObject.transform.SetParent(transform, false);
-            canvasObject.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
+            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = GameCanvasSortingOrder;
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
             var root = (RectTransform)canvasObject.transform;
+            _canvasRoot = root;
 
             var background = UiFactory.CreateImage("Background", root, theme.background);
             UiFactory.Stretch(background.rectTransform);

@@ -117,8 +117,11 @@ namespace BciChess.UI
             _opponentText.text = text;
         }
 
-        /// <summary>Shows BCI status and the current targets with their slot keys. Pass null when BCI is off.</summary>
-        public void RenderBci(BciSelectionController bci)
+        /// <summary>
+        /// Shows BCI status and the current targets with their slot keys. Pass null when BCI is off.
+        /// <paramref name="notice"/> is a standing message (e.g. a setup fallback) shown when nothing more recent is.
+        /// </summary>
+        public void RenderBci(BciSelectionController bci, string notice = "")
         {
             var slotByTarget = new Dictionary<string, string>();
             _listening = bci != null && bci.Status == BciSessionStatus.AwaitingSelection;
@@ -133,7 +136,7 @@ namespace BciChess.UI
             else
             {
                 _bciStatusText.text = BciStatusText(bci);
-                _bciMessageText.text = bci.Message;
+                _bciMessageText.text = string.IsNullOrEmpty(bci.Message) ? notice : bci.Message;
 
                 var list = new StringBuilder();
                 foreach (var target in bci.Targets)
@@ -187,7 +190,9 @@ namespace BciChess.UI
                 case BciSessionStatus.TooManyCandidates:
                     return $"{bci.CandidateCount} options do not fit {bci.Capacity} BCI targets, even grouped - use mouse/keyboard";
                 case BciSessionStatus.Unavailable:
-                    return $"{bci.Selector.Name} - unavailable";
+                    return bci.Selector is IBciStatusProvider provider
+                        ? $"{bci.Selector.Name}: {provider.StatusText}"
+                        : $"{bci.Selector.Name} - unavailable";
                 default:
                     return string.Empty;
             }

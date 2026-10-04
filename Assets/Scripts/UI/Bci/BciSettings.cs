@@ -1,4 +1,5 @@
 using System;
+using BciChess.Unicorn;
 using UnityEngine;
 
 namespace BciChess.UI
@@ -9,7 +10,10 @@ namespace BciChess.UI
         Off,
 
         /// <summary>Fake BCI driven by number keys.</summary>
-        Simulated
+        Simulated,
+
+        /// <summary>Unicorn Hybrid Black headset through the g.tec ERP pipeline.</summary>
+        Unicorn
     }
 
     /// <summary>BCI configuration, tunable in the inspector.</summary>
@@ -38,7 +42,11 @@ namespace BciChess.UI
         [Tooltip("Offer a 'Cancel' target while choosing a destination or promotion piece.")]
         public bool offerCancelTarget = true;
 
-        [Tooltip("Flash timing and target appearance.")]
+        [Tooltip("Flash timing (simulated mode) and target appearance.")]
         public StimulusVisualSettings visuals = new StimulusVisualSettings();
+
+        [Tooltip("Used when Mode is Unicorn. In that mode the g.tec paradigm controls flash timing " +
+                 "(On/Off Time on its ERPParadigm component).")]
+        public UnicornSettings unicorn = new UnicornSettings();
     }
 }

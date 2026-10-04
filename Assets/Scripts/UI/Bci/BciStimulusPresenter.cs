@@ -24,16 +24,29 @@ namespace BciChess.UI
         private BciSelectionController _bci;
         private BciCommandBar _commandBar;
         private FlashSequencer _sequencer;
+        private IStimulusSource _source;
 
         /// <summary>The stimulus timeline the visuals follow.</summary>
-        public IStimulusSource Source => _sequencer;
+        public IStimulusSource Source => _source;
 
+        /// <param name="externalSource">
+        /// Flash timing owned by the BCI device (e.g. the g.tec paradigm). When null, a local
+        /// <see cref="FlashSequencer"/> generates the flashes (simulated mode).
+        /// </param>
         public void Initialize(BciSelectionController bci, StimulusVisualSettings settings, BoardView board,
-            GameHudView hud, BciCommandBar commandBar)
+            GameHudView hud, BciCommandBar commandBar, IStimulusSource externalSource = null)
         {
             _bci = bci;
             _commandBar = commandBar;
-            _sequencer = new FlashSequencer(settings.flashOnTimeMs, settings.flashOffTimeMs);
+            if (externalSource == null)
+            {
+                _sequencer = new FlashSequencer(settings.flashOnTimeMs, settings.flashOffTimeMs);
+                _source = _sequencer;
+            }
+            else
+            {
+                _source = externalSource;
+            }
 
             for (int i = 0; i < 64; i++)
                 _squares[i] = Register(BciTargetVisual.Attach(board.GetSquareView(new Square(i)).Rect, settings, true));
@@ -60,13 +73,12 @@ namespace BciChess.UI
 
         private void Update()
         {
-            if (_sequencer == null)
+            if (_source == null)
                 return;
 
-            _sequencer.Tick(Time.unscaledDeltaTime);
-            int? lit = _sequencer.LitSlot;
+            _sequencer?.Tick(Time.unscaledDeltaTime);
             foreach (var (visual, slot) in _active)
-                visual.SetLit(lit == slot);
+                visual.SetLit(_source.IsLit(slot));
         }
 
         private BciTargetVisual Register(BciTargetVisual visual)
@@ -101,11 +113,11 @@ namespace BciChess.UI
                         _active.Add((visual, slot));
                     }
                 }
-                _sequencer.Start(_slots);
+                _sequencer?.Start(_slots);
             }
             else
             {
-                _sequencer.Stop();
+                _sequencer?.Stop();
             }
 
             _commandBar.Show(hasCancel, hasBack);

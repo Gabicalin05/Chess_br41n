@@ -3,14 +3,23 @@ using System.Collections.Generic;
 
 namespace BciChess.Bci
 {
-    /// <summary>Tells the visuals which stimulus slot is currently flashing.</summary>
+    /// <summary>
+    /// Tells the visuals which stimulus slots are lit. Either generated locally (<see cref="FlashSequencer"/>)
+    /// or driven by the BCI device's own paradigm, which owns flash timing and EEG triggers.
+    /// </summary>
     public interface IStimulusSource
     {
         /// <summary>True while stimuli are being presented.</summary>
         bool IsRunning { get; }
 
-        /// <summary>The slot index that is lit right now, or null between flashes.</summary>
-        int? LitSlot { get; }
+        /// <summary>True while the stimulus of <paramref name="slotIndex"/> is lit. Several slots may be lit at once.</summary>
+        bool IsLit(int slotIndex);
+    }
+
+    /// <summary>Optional: a selector that can explain its state to the player (e.g. "headset not connected").</summary>
+    public interface IBciStatusProvider
+    {
+        string StatusText { get; }
     }
 
     /// <summary>
@@ -46,6 +55,8 @@ namespace BciChess.Bci
         public float OffTimeSeconds { get; }
         public bool IsRunning { get; private set; }
         public int? LitSlot => IsRunning && _lit ? _round[_position] : (int?)null;
+
+        public bool IsLit(int slotIndex) => LitSlot == slotIndex;
 
         /// <summary>Completed rounds since <see cref="Start"/> (each slot flashed once per round).</summary>
         public int RoundsCompleted { get; private set; }

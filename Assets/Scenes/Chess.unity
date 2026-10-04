@@ -272,6 +272,47 @@ MonoBehaviour:
     buttonText: {r: 0.95, g: 0.96, b: 0.98, a: 1}
   startFen: 
   flipBoard: 0
+  bci:
+    mode: 2
+    enabledOnStart: 1
+    stimulusClassIds: 0100000002000000030000000400000005000000060000000700000008000000090000000a000000
+    maxSimultaneousTargets: 10
+    autoSelectSingleCandidate: 1
+    selectionTimeoutSeconds: 0
+    offerCancelTarget: 1
+    visuals:
+      flashOnTimeMs: 100
+      flashOffTimeMs: 75
+      flashColor: {r: 1, g: 1, b: 1, a: 0.9}
+      chosenColor: {r: 0.3, g: 1, b: 0.45, a: 0.85}
+      chosenFeedbackSeconds: 0.6
+      showSlotNumbers: 1
+      slotColors:
+      - {r: 0.30980393, g: 0.6392157, b: 1, a: 1}
+      - {r: 0.9490196, g: 0.6039216, b: 0.18039216, a: 1}
+      - {r: 0.23529412, g: 0.78431374, b: 0.43137255, a: 1}
+      - {r: 0.8784314, g: 0.30980393, b: 0.78431374, a: 1}
+      - {r: 0.9607843, g: 0.83137256, b: 0.23529412, a: 1}
+      - {r: 0.18039216, g: 0.827451, b: 0.8392157, a: 1}
+      - {r: 0.627451, g: 0.42352942, b: 0.9411765, a: 1}
+      - {r: 0.9411765, g: 0.3529412, b: 0.3529412, a: 1}
+      - {r: 0.6117647, g: 0.8392157, b: 0.22745098, a: 1}
+      - {r: 0.9411765, g: 0.9411765, b: 0.9411765, a: 1}
+    unicorn:
+      erpPrefab: {fileID: 6828648004259356495, guid: e096475a63c4f64428e6e1b81d872778, type: 3}
+      deviceType: 1
+      selectionThreshold: 1
+      ignoreSelectionsAfterChangeSeconds: 1
+      fallBackToSimulated: 1
+  computer:
+    playAgainstComputer: 1
+    computerPlays: 1
+    stockfishPath: Stockfish/stockfish.exe
+    skillLevel: 5
+    moveTimeMs: 800
+    searchDepth: 0
+    minimumThinkSeconds: 0.8
+    useFallbackOpponent: 1
 --- !u!4 &1154133383
 Transform:
   m_ObjectHideFlags: 0
