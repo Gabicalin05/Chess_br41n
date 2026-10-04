@@ -30,7 +30,7 @@ namespace BciChess.UI
         private GameHudView _hud;
         private KeyboardBoardInput _keyboard;
         private BciSelectionController _bci;
-        private BciTargetOverlay _bciOverlay;
+        private BciCommandBar _commandBar;
 
         public ChessGame Game => _game;
         public SelectionController Selection => _selection;
@@ -79,9 +79,6 @@ namespace BciChess.UI
 
         private void SetupBci()
         {
-            _bciOverlay = _board.gameObject.AddComponent<BciTargetOverlay>();
-            _bciOverlay.Build(_board, theme);
-
             if (bci.mode == BciMode.Off)
                 return;
 
@@ -107,6 +104,8 @@ namespace BciChess.UI
             };
             _bci = new BciSelectionController(_selection, fake, stimuli, options);
             _bci.Changed += Render;
+            gameObject.AddComponent<BciStimulusPresenter>()
+                .Initialize(_bci, bci.visuals, _board, _hud, _commandBar);
             _bci.Enabled = bci.enabledOnStart;
         }
 
@@ -125,8 +124,6 @@ namespace BciChess.UI
             _board.Render(_game, _selection, _keyboard.CursorVisible ? _keyboard.Cursor : (Square?)null);
             _hud.Render(_game, _selection);
             _hud.RenderBci(_bci);
-            if (_bciOverlay != null)
-                _bciOverlay.Render(_bci != null ? _bci.Targets : Array.Empty<BciTarget>());
         }
 
         private string ResolveStartFen()
@@ -164,13 +161,19 @@ namespace BciChess.UI
             UiFactory.Stretch(background.rectTransform);
 
             var frame = UiFactory.CreateImage("BoardFrame", root, theme.boardFrame);
-            UiFactory.Place(frame.rectTransform, new Vector2(-250f, 0f), new Vector2(920f, 920f));
+            UiFactory.Place(frame.rectTransform, new Vector2(-250f, 40f), new Vector2(880f, 880f));
 
             var boardRect = UiFactory.CreateRect("Board", frame.transform);
             UiFactory.Stretch(boardRect, 20f);
             _board = boardRect.gameObject.AddComponent<BoardView>();
             _board.Build(theme, glyphFont);
             _board.Flipped = flipBoard;
+
+            // Off-board BCI targets (Cancel, Back) live in a strip under the board.
+            var commandBarRect = UiFactory.CreateRect("BciCommandBar", root);
+            UiFactory.Place(commandBarRect, new Vector2(-250f, -462f), new Vector2(880f, 76f));
+            _commandBar = commandBarRect.gameObject.AddComponent<BciCommandBar>();
+            _commandBar.Build(theme, bci.visuals);
 
             var panel = UiFactory.CreateImage("SidePanel", root, theme.panel);
             UiFactory.Place(panel.rectTransform, new Vector2(500f, 0f), new Vector2(540f, 920f));

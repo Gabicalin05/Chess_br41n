@@ -31,6 +31,16 @@ namespace BciChess.UI
         private Text _bciMessageText;
         private readonly List<Text> _promotionKeyLabels = new List<Text>();
         private Text _promotionCancelLabel;
+        private readonly Dictionary<PieceType, RectTransform> _promotionButtons = new Dictionary<PieceType, RectTransform>();
+        private RectTransform _promotionCancelButton;
+        private Image _listeningDot;
+        private Text _listeningText;
+        private bool _listening;
+
+        /// <summary>The promotion picker button for <paramref name="type"/> (for attaching BCI visuals).</summary>
+        public RectTransform GetPromotionButton(PieceType type) => _promotionButtons[type];
+
+        public RectTransform PromotionCancelButton => _promotionCancelButton;
 
         public event Action NewGameClicked;
         public event Action UndoClicked;
@@ -89,6 +99,9 @@ namespace BciChess.UI
         public void RenderBci(BciSelectionController bci)
         {
             var slotByTarget = new Dictionary<string, string>();
+            _listening = bci != null && bci.Status == BciSessionStatus.AwaitingSelection;
+            _listeningDot.enabled = _listening;
+            _listeningText.enabled = _listening;
             if (bci == null)
             {
                 _bciStatusText.text = "Off (mouse and keyboard only)";
@@ -123,6 +136,16 @@ namespace BciChess.UI
             _promotionCancelLabel.text = slotByTarget.TryGetValue("cancel", out var cancelKey)
                 ? $"Cancel (Esc / BCI {cancelKey})"
                 : "Cancel (Esc)";
+        }
+
+        private void Update()
+        {
+            if (!_listening)
+                return;
+            // Slow pulse so the player can see at a glance that the BCI is waiting for input.
+            var color = _theme.warning;
+            color.a = 0.35f + 0.65f * (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 4f));
+            _listeningDot.color = color;
         }
 
         private static string BciStatusText(BciSelectionController bci)
@@ -265,6 +288,19 @@ namespace BciChess.UI
             var bciHeader = UiFactory.CreateText("BciHeader", panel, "BCI", 20, _theme.mutedText, TextAnchor.LowerLeft);
             UiFactory.AddLayout(bciHeader, 28f);
 
+            _listeningDot = UiFactory.CreateImage("ListeningDot", bciHeader.transform, _theme.warning, UiFactory.Circle);
+            var dotRect = _listeningDot.rectTransform;
+            dotRect.anchorMin = dotRect.anchorMax = new Vector2(0f, 0.4f);
+            dotRect.sizeDelta = new Vector2(16f, 16f);
+            dotRect.anchoredPosition = new Vector2(62f, 0f);
+            _listeningDot.enabled = false;
+
+            _listeningText = UiFactory.CreateText("ListeningLabel", bciHeader.transform, "LISTENING", 18,
+                _theme.warning, TextAnchor.LowerLeft);
+            UiFactory.Stretch(_listeningText.rectTransform);
+            _listeningText.rectTransform.offsetMin = new Vector2(80f, 0f);
+            _listeningText.enabled = false;
+
             _bciStatusText = UiFactory.CreateText("BciStatus", panel, "", 21, _theme.accent, TextAnchor.UpperLeft);
             UiFactory.AddLayout(_bciStatusText, 52f);
 
@@ -342,6 +378,7 @@ namespace BciChess.UI
                 button.onClick.AddListener(() => PromotionChosen?.Invoke(type));
                 float x = -totalWidth / 2f + buttonSize / 2f + i * (buttonSize + spacing);
                 UiFactory.Place((RectTransform)button.transform, new Vector2(x, 10f), new Vector2(buttonSize, buttonSize));
+                _promotionButtons[type] = (RectTransform)button.transform;
 
                 var glyph = UiFactory.CreateText("Glyph", button.transform, "", 92, _theme.whitePiece,
                     TextAnchor.MiddleCenter, glyphFont);
@@ -364,6 +401,7 @@ namespace BciChess.UI
                 () => PromotionCancelled?.Invoke(), 22);
             UiFactory.Place((RectTransform)cancel.transform, new Vector2(0f, -132f), new Vector2(300f, 44f));
             _promotionCancelLabel = cancel.GetComponentInChildren<Text>();
+            _promotionCancelButton = (RectTransform)cancel.transform;
 
             _promotionOverlay.SetActive(false);
         }

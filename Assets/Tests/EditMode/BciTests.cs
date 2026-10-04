@@ -198,6 +198,22 @@ namespace BciChess.Tests
         }
 
         [Test]
+        public void TargetChosen_IsRaisedBeforeTheSelectionIsApplied()
+        {
+            var (_, selection, fake, bci) = Create();
+            string chosen = null;
+            InteractionState stateWhenChosen = InteractionState.GameOver;
+            bci.TargetChosen += target =>
+            {
+                chosen = target.Id;
+                stateWhenChosen = selection.State;
+            };
+            fake.TrySelectSlot(SlotOf(bci, "piece:g1"));
+            Assert.AreEqual("piece:g1", chosen);
+            Assert.AreEqual(InteractionState.SelectingPiece, stateWhenChosen);
+        }
+
+        [Test]
         public void CancelTarget_ReturnsToPieceSelection()
         {
             var (_, selection, fake, bci) = Create();

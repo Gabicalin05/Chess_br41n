@@ -37,5 +37,8 @@ namespace BciChess.UI
 
         [Tooltip("Offer a 'Cancel' target while choosing a destination or promotion piece.")]
         public bool offerCancelTarget = true;
+
+        [Tooltip("Flash timing and target appearance.")]
+        public StimulusVisualSettings visuals = new StimulusVisualSettings();
     }
 }

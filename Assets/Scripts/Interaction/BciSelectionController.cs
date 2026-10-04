@@ -103,6 +103,9 @@ namespace BciChess.Interaction
         /// <summary>Raised whenever status, targets or message change.</summary>
         public event Action Changed;
 
+        /// <summary>Raised when the BCI picks a target, before it is acted on (for selection feedback).</summary>
+        public event Action<BciTarget> TargetChosen;
+
         public IBciSelector Selector => _selector;
         public BciSessionStatus Status { get; private set; }
 
@@ -284,6 +287,7 @@ namespace BciChess.Interaction
             }
 
             Message = string.Empty;
+            TargetChosen?.Invoke(result.Target);
             switch (result.Target.Payload)
             {
                 case CandidateGroup group:
