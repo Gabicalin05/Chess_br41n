@@ -44,6 +44,9 @@ namespace BciChess.Core
         public event Action PositionChanged;
 
         public ChessPosition Position => _positions[_positions.Count - 1];
+
+        /// <summary>The position the game started from (before <see cref="MoveHistory"/>).</summary>
+        public ChessPosition StartPosition => _positions[0];
         public PieceColor SideToMove => Position.SideToMove;
         public IReadOnlyList<ChessMove> MoveHistory => _moves;
         public ChessMove? LastMove => _moves.Count > 0 ? _moves[_moves.Count - 1] : (ChessMove?)null;
@@ -109,6 +112,25 @@ namespace BciChess.Core
             }
             move = default;
             return false;
+        }
+
+        /// <summary>Finds the legal move written in UCI notation ("e2e4", "e7e8q"). False if malformed or illegal.</summary>
+        public bool TryGetUciMove(string uci, out ChessMove move)
+        {
+            move = default;
+            if (uci == null || (uci.Length != 4 && uci.Length != 5))
+                return false;
+            if (!Square.TryParse(uci.Substring(0, 2), out var from) || !Square.TryParse(uci.Substring(2, 2), out var to))
+                return false;
+
+            var promotion = PieceType.None;
+            if (uci.Length == 5)
+            {
+                if (!Piece.TryFromFenChar(uci[4], out var piece))
+                    return false;
+                promotion = piece.Type;
+            }
+            return TryGetMove(from, to, promotion, out move);
         }
 
         public bool TryMakeMove(ChessMove move) => TryMakeMove(move.From, move.To, move.Promotion);

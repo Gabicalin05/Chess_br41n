@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using BciChess.Bci;
 using BciChess.Core;
+using BciChess.Engine;
 using BciChess.Interaction;
 using UnityEngine;
 using UnityEngine.UI;
@@ -19,6 +20,7 @@ namespace BciChess.UI
         private Text _turnText;
         private Text _promptText;
         private Text _stateText;
+        private Text _opponentText;
         private Text _movesText;
         private Button _undoButton;
         private GameObject _promotionOverlay;
@@ -93,6 +95,26 @@ namespace BciChess.UI
                         color == PieceColor.White ? _theme.whitePieceOutline : _theme.blackPieceOutline;
                 }
             }
+        }
+
+        /// <summary>Shows who the opponent is, whether it is thinking, and any engine problem. Null = no computer.</summary>
+        public void RenderOpponent(ComputerPlayer computer, ComputerSettings settings)
+        {
+            if (computer == null)
+            {
+                _opponentText.text = "Opponent: human (both sides on this machine)";
+                return;
+            }
+
+            string details = computer.EngineName == "Stockfish"
+                ? $" (skill {settings.skillLevel}, {(settings.searchDepth > 0 ? $"depth {settings.searchDepth}" : $"{settings.moveTimeMs} ms")})"
+                : string.Empty;
+            string text = $"Opponent: {computer.EngineName}{details} plays {computer.Color}";
+            if (computer.IsThinking)
+                text += " - thinking...";
+            if (!string.IsNullOrEmpty(computer.Message))
+                text += $"\n<color=#{ColorUtility.ToHtmlStringRGB(_theme.warning)}>{computer.Message}</color>";
+            _opponentText.text = text;
         }
 
         /// <summary>Shows BCI status and the current targets with their slot keys. Pass null when BCI is off.</summary>
@@ -275,6 +297,10 @@ namespace BciChess.UI
             _stateText = UiFactory.CreateText("State", panel, "", 18, _theme.mutedText, TextAnchor.MiddleLeft);
             UiFactory.AddLayout(_stateText, 26f);
 
+            _opponentText = UiFactory.CreateText("Opponent", panel, "", 19, _theme.mutedText, TextAnchor.UpperLeft);
+            _opponentText.supportRichText = true;
+            UiFactory.AddLayout(_opponentText, 48f);
+
             var divider = UiFactory.CreateImage("Divider", panel, new Color(1f, 1f, 1f, 0.08f));
             UiFactory.AddLayout(divider, 2f);
 
@@ -306,7 +332,7 @@ namespace BciChess.UI
 
             _bciTargetsText = UiFactory.CreateText("BciTargets", panel, "", 20, _theme.text, TextAnchor.UpperLeft);
             _bciTargetsText.lineSpacing = 1.1f;
-            UiFactory.AddLayout(_bciTargetsText, 96f);
+            UiFactory.AddLayout(_bciTargetsText, 80f);
 
             _bciMessageText = UiFactory.CreateText("BciMessage", panel, "", 19, _theme.warning, TextAnchor.UpperLeft);
             UiFactory.AddLayout(_bciMessageText, 24f);
@@ -330,7 +356,7 @@ namespace BciChess.UI
                 "Q/R/B/N promote - Backspace undo - F2 new game - F flip board\n" +
                 "Simulated BCI: number keys 1-9, 0 pick target slots 1-10 - F3 pauses BCI",
                 17, _theme.mutedText, TextAnchor.LowerLeft);
-            UiFactory.AddLayout(help, 110f);
+            UiFactory.AddLayout(help, 84f);
         }
 
         private void BuildGameOverBanner(RectTransform boardFrame)

@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Threading.Tasks;
 using BciChess.Bci;
 using BciChess.Core;
+using BciChess.Engine;
 using BciChess.Interaction;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -9,8 +11,8 @@ using UnityEngine.UI;
 namespace BciChess.UI
 {
     /// <summary>
-    /// Scene entry point: creates the chess game, the selection pipeline, the BCI and the UI, and wires input to them.
-    /// Both sides are currently played by humans on one machine; the computer opponent is added in a later phase.
+    /// Scene entry point: creates the chess game, the selection pipeline, the BCI, the computer opponent and the UI,
+    /// and wires them together.
     /// </summary>
     public sealed class ChessGameBootstrap : MonoBehaviour
     {
@@ -24,6 +26,8 @@ namespace BciChess.UI
 
         [SerializeField] private BciSettings bci = new BciSettings();
 
+        [SerializeField] private ComputerSettings computer = new ComputerSettings();
+
         private ChessGame _game;
         private SelectionController _selection;
         private BoardView _board;
@@ -31,6 +35,9 @@ namespace BciChess.UI
         private KeyboardBoardInput _keyboard;
         private BciSelectionController _bci;
         private BciCommandBar _commandBar;
+        private ComputerPlayer _computer;
+        private IChessEngine _engine;
+        private IChessEngine _fallbackEngine;
 
         public ChessGame Game => _game;
         public SelectionController Selection => _selection;
@@ -58,8 +65,13 @@ namespace BciChess.UI
             _keyboard.UndoRequested += Undo;
             _keyboard.FlipRequested += Flip;
 
+            SetupComputer();
             SetupBci();
             Render();
+
+            // Last, because the computer may move immediately when it plays White.
+            if (_computer != null)
+                _computer.Enabled = true;
         }
 
         private void Update()
@@ -73,8 +85,54 @@ namespace BciChess.UI
 
         private void OnDestroy()
         {
+            _computer?.Dispose();
+            _engine?.Dispose();
+            _fallbackEngine?.Dispose();
             _bci?.Dispose();
             _selection?.Dispose();
+        }
+
+        private void SetupComputer()
+        {
+            if (!computer.playAgainstComputer)
+                return;
+
+            var stockfish = new StockfishClient(new StockfishOptions
+            {
+                ExecutablePath = computer.ResolveStockfishPath(),
+                SkillLevel = computer.skillLevel,
+                MoveTimeMs = computer.moveTimeMs,
+                Depth = computer.searchDepth
+            });
+            stockfish.Diagnostic += message => Debug.Log(message);
+            _engine = stockfish;
+            _fallbackEngine = computer.useFallbackOpponent ? new SimpleEngine() : null;
+
+            _computer = new ComputerPlayer(_game, _engine, computer.computerPlays, _fallbackEngine,
+                computer.minimumThinkSeconds);
+            _computer.StateChanged += Render;
+            _selection.ComputerSide = computer.computerPlays;
+
+            // Keep the human's pieces at the bottom.
+            if (computer.computerPlays == PieceColor.White)
+                _board.Flipped = !flipBoard;
+
+            _ = WarmUpAsync(stockfish);
+        }
+
+        /// <summary>Starts Stockfish in the background so the first move is quick and a missing binary is reported early.</summary>
+        private async Task WarmUpAsync(StockfishClient stockfish)
+        {
+            try
+            {
+                await stockfish.StartAsync();
+                Debug.Log($"Stockfish ready ({computer.ResolveStockfishPath()}).");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Stockfish unavailable: {e.Message}" +
+                                 (computer.useFallbackOpponent ? " The built-in opponent will be used." : ""));
+            }
         }
 
         private void SetupBci()
@@ -111,7 +169,14 @@ namespace BciChess.UI
 
         private void NewGame() => _game.Reset(ResolveStartFen());
 
-        private void Undo() => _game.Undo();
+        /// <summary>Takes back the last move; against the computer, back to the human's previous turn.</summary>
+        private void Undo()
+        {
+            if (!_game.Undo() || _computer == null)
+                return;
+            while (_game.SideToMove == _computer.Color && _game.MoveHistory.Count > 0)
+                _game.Undo();
+        }
 
         private void Flip()
         {
@@ -123,6 +188,7 @@ namespace BciChess.UI
         {
             _board.Render(_game, _selection, _keyboard.CursorVisible ? _keyboard.Cursor : (Square?)null);
             _hud.Render(_game, _selection);
+            _hud.RenderOpponent(_computer, computer);
             _hud.RenderBci(_bci);
         }
 

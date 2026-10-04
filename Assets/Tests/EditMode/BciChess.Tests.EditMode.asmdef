@@ -6,7 +6,8 @@
         "UnityEditor.TestRunner",
         "BciChess.Core",
         "BciChess.Interaction",
-        "BciChess.Bci"
+        "BciChess.Bci",
+        "BciChess.Engine"
     ],
     "includePlatforms": [
         "Editor"

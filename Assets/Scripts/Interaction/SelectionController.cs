@@ -29,6 +29,7 @@ namespace BciChess.Interaction
 
         private readonly ChessGame _game;
         private IReadOnlyList<Square> _destinations = NoSquares;
+        private PieceColor? _computerSide;
 
         public SelectionController(ChessGame game)
         {
@@ -48,6 +49,20 @@ namespace BciChess.Interaction
         public Square? PromotionTarget { get; private set; }
 
         public static IReadOnlyList<PieceType> PromotionPieces => PromotionChoices;
+
+        /// <summary>
+        /// The colour played by the computer, or null when humans play both sides. On the computer's turn the
+        /// state is <see cref="InteractionState.ComputerThinking"/> and player selections are ignored.
+        /// </summary>
+        public PieceColor? ComputerSide
+        {
+            get => _computerSide;
+            set
+            {
+                _computerSide = value;
+                Refresh();
+            }
+        }
 
         /// <summary>Pieces that may be (re)selected right now.</summary>
         public IReadOnlyList<Square> SelectablePieces =>
@@ -112,7 +127,12 @@ namespace BciChess.Interaction
             SelectedPiece = null;
             PromotionTarget = null;
             _destinations = NoSquares;
-            SetState(_game.IsGameOver ? InteractionState.GameOver : InteractionState.SelectingPiece);
+            if (_game.IsGameOver)
+                SetState(InteractionState.GameOver);
+            else if (_computerSide == _game.SideToMove)
+                SetState(InteractionState.ComputerThinking);
+            else
+                SetState(InteractionState.SelectingPiece);
         }
 
         public void Dispose()
