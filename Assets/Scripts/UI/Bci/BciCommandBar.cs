@@ -4,7 +4,7 @@ using UnityEngine.UI;
 namespace BciChess.UI
 {
     /// <summary>
-    /// Strip below the board holding the BCI targets that are not squares ("Cancel", "Back"), so they can
+    /// Column beside the board holding the BCI targets that are not squares ("Cancel", "Back"), so they can
     /// flash like everything else. Tiles are shown only while they are targets.
     /// </summary>
     public sealed class BciCommandBar : MonoBehaviour
@@ -17,13 +17,13 @@ namespace BciChess.UI
 
         public void Build(BoardTheme theme, StimulusVisualSettings settings)
         {
-            var layout = gameObject.AddComponent<HorizontalLayoutGroup>();
+            var layout = gameObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 24f;
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.childControlWidth = true;
             layout.childControlHeight = true;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
 
             (_backTile, BackVisual) = CreateTile("Back", "Back", theme, settings);
             (_cancelTile, CancelVisual) = CreateTile("Cancel", "Cancel", theme, settings);
@@ -39,12 +39,12 @@ namespace BciChess.UI
         private (GameObject, BciTargetVisual) CreateTile(string name, string label, BoardTheme theme,
             StimulusVisualSettings settings)
         {
-            var tile = UiFactory.CreateImage(name, transform, theme.button);
+            var tile = UiFactory.CreateRounded(name, transform, theme.button, 12f);
             var element = tile.gameObject.AddComponent<LayoutElement>();
-            element.preferredWidth = 260f;
+            element.preferredHeight = 130f;
 
-            var text = UiFactory.CreateText("Label", tile.transform, label, 30, theme.buttonText, TextAnchor.MiddleCenter);
-            text.fontStyle = FontStyle.Bold;
+            var text = UiFactory.CreateText("Label", tile.transform, label, 30, theme.buttonText, TextAnchor.MiddleCenter,
+                UiFactory.Semibold);
             UiFactory.Stretch(text.rectTransform);
 
             var visual = BciTargetVisual.Attach(tile.rectTransform, settings, withBadge: true);

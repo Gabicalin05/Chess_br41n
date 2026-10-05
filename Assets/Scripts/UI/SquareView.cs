@@ -23,7 +23,9 @@ namespace BciChess.UI
     public sealed class SquareView : MonoBehaviour, IPointerClickHandler
     {
         private BoardTheme _theme;
+        private Image _background;
         private Image _tint;
+        private Image _checkGlow;
         private Image _marker;
         private Image _cursor;
         private Text _fileLabel;
@@ -35,38 +37,51 @@ namespace BciChess.UI
         public ChessPieceView PieceView { get; private set; }
         public RectTransform Rect => (RectTransform)transform;
 
-        public void Build(Square square, BoardTheme theme, Font glyphFont)
+        public void Build(Square square, BoardTheme theme, Font glyphFont, PieceSet pieceSet)
         {
             Square = square;
             _theme = theme;
 
-            var background = gameObject.AddComponent<Image>();
-            background.color = square.IsLight ? theme.lightSquare : theme.darkSquare;
-            background.raycastTarget = true;
+            _background = gameObject.AddComponent<Image>();
+            _background.raycastTarget = true;
 
             _tint = UiFactory.CreateImage("Tint", transform, Color.clear);
             UiFactory.Stretch(_tint.rectTransform);
 
-            _marker = UiFactory.CreateImage("MoveMarker", transform, theme.destinationMarker, UiFactory.Circle);
-            _marker.enabled = false;
+            _checkGlow = UiFactory.CreateImage("CheckGlow", transform, theme.checkTint, UiFactory.Glow);
+            UiFactory.Stretch(_checkGlow.rectTransform);
+            _checkGlow.enabled = false;
 
-            var labelColor = square.IsLight ? theme.darkSquare : theme.lightSquare;
-            _fileLabel = UiFactory.CreateText("FileLabel", transform, ((char)('a' + square.File)).ToString(), 18,
-                labelColor, TextAnchor.LowerRight);
-            UiFactory.Stretch(_fileLabel.rectTransform, 5f);
-            _rankLabel = UiFactory.CreateText("RankLabel", transform, (square.Rank + 1).ToString(), 18,
-                labelColor, TextAnchor.UpperLeft);
-            UiFactory.Stretch(_rankLabel.rectTransform, 5f);
+            _fileLabel = UiFactory.CreateText("FileLabel", transform, ((char)('a' + square.File)).ToString(), 17,
+                Color.white, TextAnchor.LowerRight, UiFactory.Semibold);
+            UiFactory.Stretch(_fileLabel.rectTransform, 4f);
+            _fileLabel.rectTransform.offsetMin = new Vector2(4f, 1f);
+            _rankLabel = UiFactory.CreateText("RankLabel", transform, (square.Rank + 1).ToString(), 17,
+                Color.white, TextAnchor.UpperLeft, UiFactory.Semibold);
+            UiFactory.Stretch(_rankLabel.rectTransform, 4f);
+            _rankLabel.rectTransform.offsetMax = new Vector2(-4f, -1f);
 
             var pieceRect = UiFactory.CreateRect("Piece", transform);
-            UiFactory.Stretch(pieceRect, 4f);
+            UiFactory.Stretch(pieceRect, 3f);
             PieceView = pieceRect.gameObject.AddComponent<ChessPieceView>();
-            PieceView.Build(theme, glyphFont);
+            PieceView.Build(theme, glyphFont, pieceSet);
+
+            _marker = UiFactory.CreateImage("MoveMarker", transform, theme.destinationMarker, UiFactory.Circle);
+            _marker.enabled = false;
 
             _cursor = UiFactory.CreateImage("KeyboardCursor", transform, theme.cursor, UiFactory.Frame);
             _cursor.type = Image.Type.Sliced;
             UiFactory.Stretch(_cursor.rectTransform);
             _cursor.enabled = false;
+        }
+
+        /// <summary>Applies square colours; coordinate labels use the opposite square colour.</summary>
+        public void SetColors(BoardColorScheme scheme)
+        {
+            _background.color = Square.IsLight ? scheme.Light : scheme.Dark;
+            var labelColor = Square.IsLight ? scheme.Dark : scheme.Light;
+            _fileLabel.color = labelColor;
+            _rankLabel.color = labelColor;
         }
 
         public void SetCoordinateLabels(bool showFile, bool showRank)
@@ -79,9 +94,7 @@ namespace BciChess.UI
         {
             PieceView.SetPiece(visual.Piece);
 
-            if (visual.IsCheck)
-                _tint.color = _theme.checkTint;
-            else if (visual.IsSelected)
+            if (visual.IsSelected)
                 _tint.color = _theme.selectedTint;
             else if (visual.IsSelectable)
                 _tint.color = _theme.selectableTint;
@@ -89,6 +102,7 @@ namespace BciChess.UI
                 _tint.color = _theme.lastMoveTint;
             else
                 _tint.color = Color.clear;
+            _checkGlow.enabled = visual.IsCheck;
 
             _marker.enabled = visual.IsDestination;
             if (visual.IsDestination)
@@ -96,9 +110,9 @@ namespace BciChess.UI
                 // Dot for quiet moves, ring around the victim for captures.
                 _marker.sprite = visual.IsCaptureDestination ? UiFactory.Ring : UiFactory.Circle;
                 if (visual.IsCaptureDestination)
-                    UiFactory.SetAnchors(_marker.rectTransform, new Vector2(0.03f, 0.03f), new Vector2(0.97f, 0.97f));
+                    UiFactory.SetAnchors(_marker.rectTransform, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.98f));
                 else
-                    UiFactory.SetAnchors(_marker.rectTransform, new Vector2(0.34f, 0.34f), new Vector2(0.66f, 0.66f));
+                    UiFactory.SetAnchors(_marker.rectTransform, new Vector2(0.35f, 0.35f), new Vector2(0.65f, 0.65f));
             }
 
             _cursor.enabled = visual.HasCursor;

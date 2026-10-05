@@ -16,6 +16,9 @@ namespace BciChess.Unicorn
     public sealed class UnicornBciRig : MonoBehaviour
     {
         private readonly List<StimulusProxyTag> _tags = new List<StimulusProxyTag>();
+        private float _refreshRate = 60f;
+        private int _frames;
+        private float _frameSeconds;
 
         public UnicornBciSelector Selector { get; private set; }
         public ERPParadigm Paradigm { get; private set; }
@@ -44,7 +47,9 @@ namespace BciChess.Unicorn
         /// any g.tec component runs Awake/Start. Throws if the prefab or its components are missing.
         /// </summary>
         /// <param name="uiSortingOrder">Sorting order for the g.tec UI canvases (should be above the game UI).</param>
-        public static UnicornBciRig Create(UnicornSettings settings, IReadOnlyList<StimulusSlot> slots, int uiSortingOrder)
+        /// <param name="minimumFlashes">Flashes a target needs since it appeared before a selection of it counts.</param>
+        public static UnicornBciRig Create(UnicornSettings settings, IReadOnlyList<StimulusSlot> slots, int uiSortingOrder,
+            int minimumFlashes)
         {
             if (settings == null)
                 throw new ArgumentNullException(nameof(settings));
@@ -61,7 +66,7 @@ namespace BciChess.Unicorn
                 var instance = Instantiate(settings.erpPrefab, holder.transform);
                 instance.name = settings.erpPrefab.name;
                 var rig = holder.AddComponent<UnicornBciRig>();
-                rig.Configure(settings, slots, uiSortingOrder);
+                rig.Configure(settings, slots, uiSortingOrder, minimumFlashes);
                 holder.SetActive(true);
                 return rig;
             }
@@ -72,7 +77,8 @@ namespace BciChess.Unicorn
             }
         }
 
-        private void Configure(UnicornSettings settings, IReadOnlyList<StimulusSlot> slots, int uiSortingOrder)
+        private void Configure(UnicornSettings settings, IReadOnlyList<StimulusSlot> slots, int uiSortingOrder,
+            int minimumFlashes)
         {
             Paradigm = GetComponentInChildren<ERPParadigm>(true);
             Pipeline = GetComponentInChildren<ERPPipeline>(true);
@@ -93,19 +99,21 @@ namespace BciChess.Unicorn
             Paradigm.SelectionThreshold = settings.selectionThreshold;
             Paradigm.OnTimeMs = settings.flashOnTimeMs;
             Paradigm.OffTimeMs = settings.flashOffTimeMs;
-            Paradigm.NumberOfTrainingTrials = (uint)Mathf.Max(1, settings.numberOfTrainingTrials);
+            // The g.tec paradigm refuses fewer than 30 training trials.
+            Paradigm.NumberOfTrainingTrials = (uint)Mathf.Max(30, settings.numberOfTrainingTrials);
+            LockFrameRateToDisplay();
 
             ReplaceDemoTags(classIds);
 
             BringUiToFront(uiSortingOrder);
 
-            Selector = new UnicornBciSelector(Paradigm, Pipeline, Device, slots, settings.ignoreSelectionsAfterChangeSeconds);
+            Selector = new UnicornBciSelector(Paradigm, Pipeline, Device, slots, minimumFlashes);
             Selector.Diagnostic += message => Debug.Log("[Unicorn] " + message, this);
 
             Paradigm.OnParadigmStarted.AddListener(RaiseStateChanged);
             Paradigm.OnParadigmStopped.AddListener(RaiseStateChanged);
             Pipeline.OnCalibrationResult.AddListener(OnCalibrationResult);
-            Pipeline.OnRuntimeExceptionOccured.AddListener(e => Debug.LogException(e, this));
+            Pipeline.OnRuntimeExceptionOccured.AddListener(OnPipelineException);
             Device.OnRuntimeExceptionOccured.AddListener(e => Debug.LogException(e, this));
         }
 
@@ -164,9 +172,71 @@ namespace BciChess.Unicorn
 
         private void OnCalibrationResult(ERPParadigm paradigm, CalibrationResult result)
         {
-            CalibrationSummary = result == null ? string.Empty : $"{result.CalibrationQuality} ({result.TrialsSelected} trials)";
+            if (result == null)
+                return;
+            CalibrationSummary = $"{result.CalibrationQuality} ({result.TrialsSelected} trials)";
             Debug.Log("[Unicorn] Calibration: " + CalibrationSummary, this);
             RaiseStateChanged();
+        }
+
+        /// <summary>
+        /// The g.tec ERP paradigm advances its flash sequence once per rendered frame and sizes that sequence for the
+        /// display refresh rate. If the game renders faster (the Editor's Game view runs uncapped unless its VSync
+        /// toggle is on), flashes come far too quickly, their EEG triggers collide and get lost, and training ends
+        /// with too few trials ("More data required"). So render at exactly the refresh rate.
+        /// </summary>
+        private void LockFrameRateToDisplay()
+        {
+            double refresh = Screen.currentResolution.refreshRateRatio.value;
+            _refreshRate = refresh > 1.0 ? (float)refresh : 60f;
+#if UNITY_EDITOR
+            // The Game view ignores QualitySettings.vSyncCount, but honours a target frame rate when VSync is off.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = Mathf.RoundToInt(_refreshRate);
+#else
+            QualitySettings.vSyncCount = 1;
+            Application.targetFrameRate = -1;
+#endif
+        }
+
+        /// <summary>Warns while flashing if the frame rate drifts from the refresh rate the paradigm assumes.</summary>
+        private void Update()
+        {
+            if (Paradigm == null || !Paradigm.IsRunning)
+            {
+                _frames = 0;
+                _frameSeconds = 0f;
+                return;
+            }
+
+            _frames++;
+            _frameSeconds += Time.unscaledDeltaTime;
+            if (_frameSeconds < 5f)
+                return;
+            float fps = _frames / _frameSeconds;
+            if (Mathf.Abs(fps - _refreshRate) > _refreshRate * 0.15f)
+            {
+                Debug.LogWarning($"[Unicorn] Rendering at {fps:0} fps but the display runs at {_refreshRate:0} Hz. The g.tec " +
+                                 "paradigm times flashes in frames, so flashes run at the wrong speed and EEG triggers can " +
+                                 "be lost. In the Editor, turn on VSync in the Game view toolbar or use a build.", this);
+            }
+            _frames = 0;
+            _frameSeconds = 0f;
+        }
+
+        private void OnPipelineException(Exception exception)
+        {
+            // Thrown by the g.tec classifier training (10-fold cross-validation) when fewer than 10 trials arrived.
+            if (exception != null && exception.Message.Contains("More data required"))
+            {
+                CalibrationSummary = "failed - too few training trials reached the EEG pipeline. Train again.";
+                Debug.LogWarning("[Unicorn] Calibration failed: the classifier needs at least 10 complete training " +
+                                 "trials, but most EEG triggers were lost. Usually the frame rate did not match the display " +
+                                 "refresh rate (see warnings above) or training was stopped early. Start training again.", this);
+                RaiseStateChanged();
+                return;
+            }
+            Debug.LogException(exception, this);
         }
 
         private void RaiseStateChanged() => StateChanged?.Invoke();

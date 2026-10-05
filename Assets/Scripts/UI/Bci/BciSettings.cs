@@ -42,6 +42,22 @@ namespace BciChess.UI
         [Tooltip("Offer a 'Cancel' target while choosing a destination or promotion piece.")]
         public bool offerCancelTarget = true;
 
+        [Header("Selection reliability")]
+        [Tooltip("A target must have flashed at least this many times since it appeared before it can be selected.")]
+        [Min(0)] public int minimumFlashesBeforeSelection = 10;
+
+        [Tooltip("Targets or groups whose squares are within this many squares of each other count as neighbours " +
+                 "and get the most different stimuli (colour and flash timing). 1.5 = touching incl. diagonals; 0 = off.")]
+        [Min(0f)] public float neighbourDistance = 1.5f;
+
+        [Tooltip("Neighbour distance while choosing a destination. Legal moves often lie on one line; a larger " +
+                 "distance keeps consecutive flashes several squares apart. 2.9 = within two squares, incl. knight jumps.")]
+        [Min(0f)] public float destinationNeighbourDistance = 2.9f;
+
+        [Tooltip("Minimum distance, in flashes, between flashes of two neighbours (2 = at least one other flash in " +
+                 "between). Applies to the simulated flashing; in Unicorn mode the g.tec paradigm sets the flash order.")]
+        [Min(1)] public int neighbourFlashSpacing = 2;
+
         [Tooltip("Flash timing (simulated mode) and target appearance.")]
         public StimulusVisualSettings visuals = new StimulusVisualSettings();
 

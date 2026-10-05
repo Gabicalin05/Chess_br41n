@@ -64,6 +64,25 @@ namespace BciChess.Interaction
 
         /// <summary>How candidates are grouped when they exceed the available stimulus slots.</summary>
         public ICandidateGroupingStrategy GroupingStrategy { get; set; } = new BalancedGroupingStrategy();
+
+        /// <summary>
+        /// Targets (or groups) with squares within this distance, in squares, count as neighbours and get stimuli
+        /// that are as different as possible. 1.5 = touching squares incl. diagonals. 0 = no neighbour handling.
+        /// </summary>
+        public float NeighbourDistance { get; set; } = 1.5f;
+
+        /// <summary>
+        /// Neighbour distance while choosing a destination. Legal moves often lie on one line (a rook's file, a
+        /// bishop's diagonal); a larger distance keeps consecutive flashes several squares apart so they never look
+        /// like a running sequence. 2.9 = anything within two squares, incl. knight jumps.
+        /// </summary>
+        public float DestinationNeighbourDistance { get; set; } = 2.9f;
+
+        /// <summary>
+        /// How different two stimulus slots are (larger = more different), e.g. by their on-screen colour.
+        /// Null = distance of slot indices around the slot ring.
+        /// </summary>
+        public Func<int, int, double> SlotDistance { get; set; }
     }
 
     /// <summary>
@@ -82,6 +101,7 @@ namespace BciChess.Interaction
         private readonly CandidateNavigator _navigator;
 
         private IReadOnlyList<BciTarget> _targets = NoTargets;
+        private IReadOnlyList<(int, int)> _neighbourSlotPairs = Array.Empty<(int, int)>();
         private bool _enabled;
         private float _elapsedSeconds;
 
@@ -111,6 +131,12 @@ namespace BciChess.Interaction
 
         /// <summary>Targets currently presented, each with its assigned stimulus.</summary>
         public IReadOnlyList<BciTarget> Targets => _targets;
+
+        /// <summary>True while the targets are the legal destinations of the selected piece.</summary>
+        public bool IsChoosingDestination => _selection.State == InteractionState.SelectingDestination;
+
+        /// <summary>Stimulus slot pairs whose current targets are neighbours on screen (for flash scheduling).</summary>
+        public IReadOnlyList<(int, int)> NeighbourSlotPairs => _neighbourSlotPairs;
 
         /// <summary>Number of chess candidates in the current step (pieces, destinations or promotion pieces).</summary>
         public int CandidateCount { get; private set; }
@@ -173,7 +199,7 @@ namespace BciChess.Interaction
                     foreach (var square in SpatialOrder(selection.SelectablePieces))
                     {
                         targets.Add(new BciTarget("piece:" + square, $"{position[square].Type} {square}",
-                            new ChessTargetPayload(ChessTargetKind.Piece, square)));
+                            new ChessTargetPayload(ChessTargetKind.Piece, square), position: PositionOf(square)));
                     }
                     break;
 
@@ -182,15 +208,18 @@ namespace BciChess.Interaction
                     {
                         string label = position[square].IsNone ? square.ToString() : $"{square} (capture)";
                         targets.Add(new BciTarget("dest:" + square, label,
-                            new ChessTargetPayload(ChessTargetKind.Destination, square)));
+                            new ChessTargetPayload(ChessTargetKind.Destination, square), position: PositionOf(square)));
                     }
                     break;
 
                 case InteractionState.SelectingPromotion:
-                    foreach (var type in SelectionController.PromotionPieces)
+                    // The promotion buttons sit side by side in one row, well away from the board.
+                    var pieces = SelectionController.PromotionPieces;
+                    for (int i = 0; i < pieces.Count; i++)
                     {
-                        targets.Add(new BciTarget("promo:" + type, type.ToString(),
-                            new ChessTargetPayload(ChessTargetKind.Promotion, promotion: type)));
+                        targets.Add(new BciTarget("promo:" + pieces[i], pieces[i].ToString(),
+                            new ChessTargetPayload(ChessTargetKind.Promotion, promotion: pieces[i]),
+                            position: new TargetPosition(i, PromotionRowY)));
                     }
                     break;
             }
@@ -200,11 +229,17 @@ namespace BciChess.Interaction
         private static IEnumerable<Square> SpatialOrder(IEnumerable<Square> squares) =>
             squares.OrderBy(s => s.File).ThenBy(s => s.Rank);
 
+        private const float PromotionRowY = 100f;
+
+        /// <summary>Board position in squares; flipping the board does not change which squares are adjacent.</summary>
+        private static TargetPosition PositionOf(Square square) => new TargetPosition(square.File, square.Rank);
+
         /// <summary>Starts a new step from the top level (selection state, availability or enabled changed).</summary>
         private void Restart()
         {
             _selector.StopSelection();
             _targets = NoTargets;
+            _neighbourSlotPairs = Array.Empty<(int, int)>();
             CandidateCount = 0;
 
             if (!_enabled)
@@ -238,6 +273,7 @@ namespace BciChess.Interaction
         {
             _selector.StopSelection();
             _targets = NoTargets;
+            _neighbourSlotPairs = Array.Empty<(int, int)>();
             _elapsedSeconds = 0f;
 
             if (!_selector.IsAvailable)
@@ -261,16 +297,26 @@ namespace BciChess.Interaction
             var all = new List<BciTarget>(options.Count + extras.Count);
             all.AddRange(options);
             all.AddRange(extras);
-            if (!_stimuli.TryAssign(all, out var assigned))
+            float neighbourDistance = IsChoosingDestination
+                ? Math.Max(_options.NeighbourDistance, _options.DestinationNeighbourDistance)
+                : _options.NeighbourDistance;
+            var neighbours = NeighbourGraph.Build(all, neighbourDistance);
+            if (!_stimuli.TryAssign(all, neighbours, out var assigned, _options.SlotDistance))
             {
                 SetStatus(BciSessionStatus.TooManyCandidates);
                 return;
             }
 
             _targets = assigned;
-            // Set status first: a selector could, in theory, answer synchronously.
-            SetStatus(BciSessionStatus.AwaitingSelection);
+            _neighbourSlotPairs = neighbours.Pairs()
+                .Select(p => (assigned[p.Item1].Stimulus.Value.Index, assigned[p.Item2].Stimulus.Value.Index))
+                .ToList();
+
+            // Start the selector before announcing the new targets, so flashes shown in reaction to the
+            // announcement are already counted for this selection.
             _selector.StartSelection(assigned);
+            if (_targets == assigned) // unless the selector answered synchronously
+                SetStatus(BciSessionStatus.AwaitingSelection);
         }
 
         private void OnSelectionFinished(BciSelectionResult result)

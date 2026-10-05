@@ -14,6 +14,10 @@ namespace BciChess.UI
         [Tooltip("Dark gap between two flashes, in milliseconds.")]
         [Min(0f)] public float flashOffTimeMs = 75f;
 
+        [Tooltip("Dark gap between two flashes while choosing where the selected piece moves. A clear pause " +
+                 "after every legal-move flash keeps them from blending into a moving sequence.")]
+        [Min(0f)] public float destinationFlashOffTimeMs = 300f;
+
         [Header("Look")]
         [Tooltip("Overlay drawn over a target while it flashes.")]
         public Color flashColor = new Color(1f, 1f, 1f, 0.9f);
@@ -40,6 +44,15 @@ namespace BciChess.UI
             new Color32(0x9C, 0xD6, 0x3A, 0xFF), // lime
             new Color32(0xF0, 0xF0, 0xF0, 0xFF)  // white
         };
+
+        /// <summary>How different two slots look: distance of their colours in RGB space (0 = identical).</summary>
+        public double SlotColorDistance(int a, int b)
+        {
+            var ca = SlotColor(a);
+            var cb = SlotColor(b);
+            float dr = ca.r - cb.r, dg = ca.g - cb.g, db = ca.b - cb.b;
+            return Math.Sqrt(dr * dr + dg * dg + db * db);
+        }
 
         public Color SlotColor(int slotIndex)
         {

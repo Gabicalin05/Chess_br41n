@@ -25,28 +25,27 @@ namespace BciChess.UI
         private BciCommandBar _commandBar;
         private FlashSequencer _sequencer;
         private IStimulusSource _source;
+        private int _neighbourFlashSpacing = 2;
+        private StimulusVisualSettings _settings;
 
         /// <summary>The stimulus timeline the visuals follow.</summary>
         public IStimulusSource Source => _source;
 
-        /// <param name="externalSource">
-        /// Flash timing owned by the BCI device (e.g. the g.tec paradigm). When null, a local
-        /// <see cref="FlashSequencer"/> generates the flashes (simulated mode).
+        /// <param name="source">
+        /// What the visuals follow. A <see cref="FlashSequencer"/> (simulated mode) is driven by this presenter:
+        /// started for each new set of targets, with neighbouring targets kept <paramref name="neighbourFlashSpacing"/>
+        /// flashes apart. Any other source (e.g. the g.tec paradigm) owns its own timing.
+        /// When null, a local sequencer is created.
         /// </param>
         public void Initialize(BciSelectionController bci, StimulusVisualSettings settings, BoardView board,
-            GameHudView hud, BciCommandBar commandBar, IStimulusSource externalSource = null)
+            GameHudView hud, BciCommandBar commandBar, IStimulusSource source = null, int neighbourFlashSpacing = 2)
         {
             _bci = bci;
             _commandBar = commandBar;
-            if (externalSource == null)
-            {
-                _sequencer = new FlashSequencer(settings.flashOnTimeMs, settings.flashOffTimeMs);
-                _source = _sequencer;
-            }
-            else
-            {
-                _source = externalSource;
-            }
+            _settings = settings;
+            _source = source ?? new FlashSequencer(settings.flashOnTimeMs, settings.flashOffTimeMs);
+            _sequencer = _source as FlashSequencer;
+            _neighbourFlashSpacing = neighbourFlashSpacing;
 
             for (int i = 0; i < 64; i++)
                 _squares[i] = Register(BciTargetVisual.Attach(board.GetSquareView(new Square(i)).Rect, settings, true));
@@ -113,7 +112,13 @@ namespace BciChess.UI
                         _active.Add((visual, slot));
                     }
                 }
-                _sequencer?.Start(_slots);
+                if (_sequencer != null)
+                {
+                    // Legal-move targets get a longer dark pause after each flash.
+                    _sequencer.SetTiming(_settings.flashOnTimeMs,
+                        _bci.IsChoosingDestination ? _settings.destinationFlashOffTimeMs : _settings.flashOffTimeMs);
+                    _sequencer.Start(_slots, _bci.NeighbourSlotPairs, _neighbourFlashSpacing);
+                }
             }
             else
             {

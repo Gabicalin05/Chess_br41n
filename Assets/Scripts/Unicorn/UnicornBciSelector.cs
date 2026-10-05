@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using BciChess.Bci;
 using Gtec.Chain.Common.Templates.Utilities;
 using Gtec.UnityInterface;
-using UnityEngine;
 using static Gtec.Chain.Common.Templates.DataAcquisitionUnit.DataAcquisitionUnit;
 
 namespace BciChess.Unicorn
@@ -13,8 +12,11 @@ namespace BciChess.Unicorn
     /// The g.tec paradigm keeps flashing one tag per stimulus class; this selector maps the class the classifier
     /// reports back to the target currently assigned to that class. It is also the stimulus source for the
     /// visuals, so what the player sees flash is exactly what the paradigm flashes.
+    /// A selection only counts once the chosen target has flashed a minimum number of times since the targets
+    /// were presented; this also discards evidence gathered while other targets held the same class.
     /// </summary>
-    public sealed class UnicornBciSelector : IBciSelector, IStimulusSource, IBciStatusProvider, IDisposable
+    public sealed class UnicornBciSelector : IBciSelector, IStimulusSource, IBciStatusProvider, ISelectionProgress,
+        IDisposable
     {
         private static readonly IReadOnlyList<BciTarget> NoTargets = Array.Empty<BciTarget>();
 
@@ -22,22 +24,22 @@ namespace BciChess.Unicorn
         private readonly ERPPipeline _pipeline;
         private readonly Device _device;
         private readonly StimulusSlot[] _slots;
-        private readonly float _ignoreSecondsAfterStart;
         private readonly HashSet<int> _litClasses = new HashSet<int>();
+        private readonly FlashCounter _flashes;
 
         private IReadOnlyList<BciTarget> _targets = NoTargets;
-        private double _selectionStartedAt;
         private States _deviceState = States.Disconnected;
         private bool _available;
 
         public UnicornBciSelector(ERPParadigm paradigm, ERPPipeline pipeline, Device device,
-            IReadOnlyList<StimulusSlot> slots, float ignoreSecondsAfterStart)
+            IReadOnlyList<StimulusSlot> slots, int minimumFlashes)
         {
             _paradigm = paradigm ? paradigm : throw new ArgumentNullException(nameof(paradigm));
             _pipeline = pipeline ? pipeline : throw new ArgumentNullException(nameof(pipeline));
             _device = device ? device : throw new ArgumentNullException(nameof(device));
             _slots = new List<StimulusSlot>(slots ?? throw new ArgumentNullException(nameof(slots))).ToArray();
-            _ignoreSecondsAfterStart = Mathf.Max(0f, ignoreSecondsAfterStart);
+            FlashesRequired = Math.Max(0, minimumFlashes);
+            _flashes = new FlashCounter(this);
 
             _pipeline.OnClassSelection.AddListener(OnClassSelection);
             _device.OnDeviceStateChanged.AddListener(OnDeviceStateChanged);
@@ -52,6 +54,7 @@ namespace BciChess.Unicorn
 
         public event Action AvailabilityChanged;
         public event Action<BciSelectionResult> SelectionFinished;
+        public event Action<int> FlashStarted;
 
         /// <summary>Raised for notable events (ignored or unmatched selections, disconnects) for logging.</summary>
         public event Action<string> Diagnostic;
@@ -64,6 +67,21 @@ namespace BciChess.Unicorn
 
         public bool IsLit(int slotIndex) =>
             slotIndex >= 0 && slotIndex < _slots.Length && _litClasses.Contains(_slots[slotIndex].ClassId);
+
+        public int FlashesRequired { get; }
+
+        public int FlashesCollected
+        {
+            get
+            {
+                if (!IsSelecting)
+                    return 0;
+                var slots = new List<int>(_targets.Count);
+                foreach (var target in _targets)
+                    slots.Add(target.Stimulus.Value.Index);
+                return _flashes.MinimumOver(slots);
+            }
+        }
 
         public string StatusText
         {
@@ -90,7 +108,7 @@ namespace BciChess.Unicorn
             }
 
             _targets = targets;
-            _selectionStartedAt = Time.unscaledTimeAsDouble;
+            _flashes.Reset();
             IsSelecting = _available;
         }
 
@@ -103,15 +121,45 @@ namespace BciChess.Unicorn
         /// <summary>Called by the stimulus proxy tags when the paradigm switches a class on or off.</summary>
         public void OnStimulusChanged(int classId, bool on)
         {
-            if (on)
-                _litClasses.Add(classId);
-            else
+            if (!on)
+            {
                 _litClasses.Remove(classId);
+                return;
+            }
+
+            // Several proxy tags can share a class (e.g. the training object); count each flash once.
+            if (!_litClasses.Add(classId))
+                return;
+            for (int slot = 0; slot < _slots.Length; slot++)
+            {
+                if (_slots[slot].ClassId == classId)
+                    FlashStarted?.Invoke(slot);
+            }
+        }
+
+        /// <summary>
+        /// Manual override: selects the current target on slot <paramref name="slotIndex"/> as if the classifier had
+        /// reported it, without waiting for flashes. Returns false when idle or when no current target uses the slot.
+        /// </summary>
+        public bool TrySelectSlot(int slotIndex)
+        {
+            if (!IsSelecting)
+                return false;
+            foreach (var target in _targets)
+            {
+                if (target.Stimulus.Value.Index != slotIndex)
+                    continue;
+                Diagnostic?.Invoke($"Manual override selected slot {slotIndex + 1} ({target.Id}).");
+                Finish(BciSelectionResult.Selected(target));
+                return true;
+            }
+            return false;
         }
 
         public void Dispose()
         {
             StopSelection();
+            _flashes.Dispose();
             // The g.tec components may already be destroyed when the scene unloads.
             if (_pipeline)
                 _pipeline.OnClassSelection.RemoveListener(OnClassSelection);
@@ -129,20 +177,20 @@ namespace BciChess.Unicorn
             if (!IsSelecting || selection == null)
                 return;
 
-            double age = Time.unscaledTimeAsDouble - _selectionStartedAt;
-            if (age < _ignoreSecondsAfterStart)
-            {
-                Diagnostic?.Invoke($"Ignored class {selection.Class}: arrived {age:0.00}s after the targets changed.");
-                return;
-            }
-
             foreach (var target in _targets)
             {
-                if (target.Stimulus.Value.ClassId == selection.Class)
+                if (target.Stimulus.Value.ClassId != selection.Class)
+                    continue;
+
+                int flashes = _flashes.CountOf(target.Stimulus.Value.Index);
+                if (flashes < FlashesRequired)
                 {
-                    Finish(BciSelectionResult.Selected(target));
+                    Diagnostic?.Invoke($"Ignored class {selection.Class}: only {flashes}/{FlashesRequired} flashes " +
+                                       "since the targets changed.");
                     return;
                 }
+                Finish(BciSelectionResult.Selected(target));
+                return;
             }
 
             Diagnostic?.Invoke($"Class {selection.Class} (confidence {selection.Confidence:0.##}) matches no current target.");

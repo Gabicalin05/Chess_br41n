@@ -277,7 +277,7 @@ namespace BciChess.Tests
             int groupCount = bci.Targets.Count;
             var group = (CandidateGroup)bci.Targets[0].Payload;
 
-            fake.TrySelectSlot(0);
+            fake.TrySelectSlot(bci.Targets[0].Stimulus.Value.Index);
             Assert.AreEqual(1, bci.Depth);
             CollectionAssert.AreEqual(group.Members.Select(m => m.Id).Concat(new[] { "back" }),
                 bci.Targets.Select(t => t.Id));
@@ -377,7 +377,9 @@ namespace BciChess.Tests
         public void InvalidSelection_KeepsWaiting()
         {
             var (game, _, fake, bci) = Create();
-            fake.TrySelectSlot(11); // capacity 12, only 10 candidates
+            // Capacity 12, only 10 candidates: some slot is unused.
+            var used = bci.Targets.Select(t => t.Stimulus.Value.Index).ToList();
+            fake.TrySelectSlot(Enumerable.Range(0, 12).First(slot => !used.Contains(slot)));
             Assert.AreEqual(BciSessionStatus.AwaitingSelection, bci.Status);
             Assert.IsNotEmpty(bci.Message);
             Assert.AreEqual(0, game.MoveHistory.Count);

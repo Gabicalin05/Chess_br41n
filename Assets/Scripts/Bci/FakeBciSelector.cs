@@ -7,14 +7,42 @@ namespace BciChess.Bci
     /// Simulated BCI for development and demos without the headset. Something external (keyboard input,
     /// tests) reports which stimulus the "player" attended to via <see cref="TrySelectSlot"/>.
     /// </summary>
-    public sealed class FakeBciSelector : IBciSelector
+    public sealed class FakeBciSelector : IBciSelector, ISelectionProgress, IDisposable
     {
         private static readonly IReadOnlyList<BciTarget> NoTargets = Array.Empty<BciTarget>();
 
         private IReadOnlyList<BciTarget> _targets = NoTargets;
         private bool _isAvailable = true;
+        private FlashCounter _flashes;
+
+        /// <param name="minimumFlashes">
+        /// Flashes a target must have had before it can be selected, like a real ERP classifier needs evidence.
+        /// Only enforced once a stimulus source is attached (<see cref="AttachStimulusSource"/>).
+        /// </param>
+        public FakeBciSelector(int minimumFlashes = 0)
+        {
+            FlashesRequired = Math.Max(0, minimumFlashes);
+        }
 
         public string Name => "Simulated (keyboard)";
+
+        public int FlashesRequired { get; }
+
+        public int FlashesCollected =>
+            _flashes == null || !IsSelecting ? 0 : _flashes.MinimumOver(SlotsOf(_targets));
+
+        /// <summary>Counts flashes from <paramref name="source"/> to enforce the minimum before a selection.</summary>
+        public void AttachStimulusSource(IStimulusSource source)
+        {
+            _flashes?.Dispose();
+            _flashes = source == null ? null : new FlashCounter(source);
+        }
+
+        public void Dispose()
+        {
+            _flashes?.Dispose();
+            _flashes = null;
+        }
         public bool IsAvailable => _isAvailable;
         public bool IsSelecting { get; private set; }
         public IReadOnlyList<BciTarget> CurrentTargets => IsSelecting ? _targets : NoTargets;
@@ -33,6 +61,7 @@ namespace BciChess.Bci
             }
 
             _targets = targets;
+            _flashes?.Reset();
             IsSelecting = _isAvailable;
         }
 
@@ -43,10 +72,15 @@ namespace BciChess.Bci
         }
 
         /// <summary>Simulates the player attending to the stimulus in slot <paramref name="slotIndex"/>.</summary>
-        /// <returns>False when idle; otherwise true (an unknown slot finishes with an Invalid result).</returns>
+        /// <returns>
+        /// False when idle or when the slot has not flashed the required number of times yet (the selection keeps
+        /// running); otherwise true (an unknown slot finishes with an Invalid result).
+        /// </returns>
         public bool TrySelectSlot(int slotIndex)
         {
             if (!IsSelecting)
+                return false;
+            if (_flashes != null && _flashes.CountOf(slotIndex) < FlashesRequired)
                 return false;
 
             foreach (var target in _targets)
@@ -70,6 +104,12 @@ namespace BciChess.Bci
             if (!available && IsSelecting)
                 Finish(BciSelectionResult.Failed("Simulated BCI disconnected."));
             AvailabilityChanged?.Invoke();
+        }
+
+        private static IEnumerable<int> SlotsOf(IReadOnlyList<BciTarget> targets)
+        {
+            foreach (var target in targets)
+                yield return target.Stimulus.Value.Index;
         }
 
         private void Finish(BciSelectionResult result)

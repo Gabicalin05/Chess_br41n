@@ -27,13 +27,36 @@ namespace BciChess.Bci
         public override int GetHashCode() => (Index * 397) ^ ClassId;
     }
 
+    /// <summary>Where a target is on screen, in any consistent unit (e.g. board squares). Used to find neighbours.</summary>
+    public readonly struct TargetPosition
+    {
+        public readonly float X;
+        public readonly float Y;
+
+        public TargetPosition(float x, float y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public float DistanceTo(TargetPosition other)
+        {
+            float dx = X - other.X;
+            float dy = Y - other.Y;
+            return (float)Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        public override string ToString() => $"({X}, {Y})";
+    }
+
     /// <summary>
     /// Something the player can pick with the BCI. The BCI layer treats the payload as opaque, so it
     /// never needs to know whether a target is a chess piece, a square or a menu option.
     /// </summary>
     public sealed class BciTarget
     {
-        public BciTarget(string id, string label, object payload = null, StimulusSlot? stimulus = null)
+        public BciTarget(string id, string label, object payload = null, StimulusSlot? stimulus = null,
+            TargetPosition? position = null)
         {
             if (string.IsNullOrEmpty(id))
                 throw new ArgumentException("Target id is required.", nameof(id));
@@ -41,7 +64,11 @@ namespace BciChess.Bci
             Label = label ?? id;
             Payload = payload;
             Stimulus = stimulus;
+            Position = position;
         }
+
+        /// <summary>Optional on-screen position. Groups take their members' positions instead.</summary>
+        public TargetPosition? Position { get; }
 
         public string Id { get; }
         public string Label { get; }
@@ -52,7 +79,7 @@ namespace BciChess.Bci
         /// <summary>Stimulus assigned for the current selection, or null if not yet assigned.</summary>
         public StimulusSlot? Stimulus { get; }
 
-        public BciTarget WithStimulus(StimulusSlot slot) => new BciTarget(Id, Label, Payload, slot);
+        public BciTarget WithStimulus(StimulusSlot slot) => new BciTarget(Id, Label, Payload, slot, Position);
 
         public override string ToString() => Stimulus.HasValue ? $"{Label} [{Stimulus.Value}]" : Label;
     }
